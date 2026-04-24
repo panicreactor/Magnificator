@@ -1,0 +1,28 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+
+# JUCE source — клонується workflow-ом / користувачем окремо
+JUCE/
+
+# IDE
+.vscode/
+.vs/
+.idea/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Artifacts
+*.vst3
+*.component
+*.aaxplugin
+*.zip
+!Magnificator.zip.keep  # placeholder if needed
+
+# Compile logs
+*.log
