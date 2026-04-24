@@ -1,0 +1,93 @@
+name: Build Magnificator (Windows x64)
+
+# Запуск: автоматично при кожному push/PR, а також кнопкою "Run workflow"
+# на вкладці Actions у GitHub.
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows x64 (VST3 + Standalone)
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      # 1. Забираємо код плагіна
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # 2. JUCE 7.0.12 (кешується між запусками → економить 1–2 хв)
+      - name: Cache JUCE
+        id: cache-juce
+        uses: actions/cache@v4
+        with:
+          path: JUCE
+          key: juce-7.0.12
+
+      - name: Clone JUCE (якщо не в кеші)
+        if: steps.cache-juce.outputs.cache-hit != 'true'
+        shell: bash
+        run: git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git
+
+      # 3. Конфігурація з нативним MSVC 2022 (генератор Visual Studio, x64)
+      - name: Configure CMake (MSVC x64)
+        run: >
+          cmake -B build
+          -G "Visual Studio 17 2022"
+          -A x64
+          -DCMAKE_BUILD_TYPE=Release
+
+      # 4. Компіляція
+      - name: Build (Release)
+        run: cmake --build build --config Release --parallel
+
+      # 5. Перевіряємо, що саме зібралось
+      - name: Show build artefacts
+        shell: bash
+        run: |
+          echo "--- VST3 bundles ---"
+          find build -type d -name "*.vst3" || true
+          echo ""
+          echo "--- Standalone EXE ---"
+          find build -name "Magnificator.exe" || true
+
+      # 6. Пакуємо .vst3 bundle у zip (щоб зберегти структуру папок при скачуванні)
+      - name: Package VST3 bundle
+        shell: pwsh
+        run: |
+          $vst3 = "build/Magnificator_artefacts/Release/VST3/Magnificator.vst3"
+          if (-not (Test-Path $vst3)) {
+            throw "VST3 bundle not found at $vst3"
+          }
+          Compress-Archive -Path $vst3 -DestinationPath "Magnificator-VST3-Windows-x64.zip" -Force
+          Write-Host "ZIP size:" (Get-Item Magnificator-VST3-Windows-x64.zip).Length "bytes"
+
+      # 7. Пакуємо Standalone (опціонально, для швидкого тесту без DAW)
+      - name: Package Standalone
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $exeDir = "build/Magnificator_artefacts/Release/Standalone"
+          if (Test-Path $exeDir) {
+            Compress-Archive -Path "$exeDir/*" -DestinationPath "Magnificator-Standalone-Windows-x64.zip" -Force
+          }
+
+      # 8. Заливаємо як artefact — з'явиться внизу сторінки workflow run
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Magnificator-VST3-Windows-x64
+          path: Magnificator-VST3-Windows-x64.zip
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload Standalone artifact
+        if: hashFiles('Magnificator-Standalone-Windows-x64.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Magnificator-Standalone-Windows-x64
+          path: Magnificator-Standalone-Windows-x64.zip
+          retention-days: 90
